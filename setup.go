@@ -232,6 +232,14 @@ func setup(c *caddy.Controller) error {
 					fp.aclRules = append(fp.aclRules, ar)
 				}
 			}
+		case "header_pass":
+			if len(args) != 1 {
+				return c.ArgErr()
+			}
+			if fp.relayHeaders == nil {
+				fp.relayHeaders = []string{}
+			}
+			fp.relayHeaders = append(fp.relayHeaders, args[0])
 		default:
 			return c.ArgErr()
 		}

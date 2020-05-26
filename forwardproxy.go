@@ -64,6 +64,8 @@ type ForwardProxy struct {
 
 	aclRules         []aclRule
 	whitelistedPorts []int
+
+	relayHeaders []string
 }
 
 var bufferPool sync.Pool
@@ -152,7 +154,7 @@ func serveHijack(w http.ResponseWriter, targetConn net.Conn) (int, error) {
 		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
-		Header:     make(http.Header),
+		Header:     w.Header(),
 	}
 	res.Header.Set("Server", "Caddy")
 
@@ -320,14 +322,29 @@ func (fp *ForwardProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, 
 	}
 
 	ctx := context.Background()
+	var ctxHeader http.Header
+
 	if !fp.hideIP {
-		ctxHeader := make(http.Header)
+		ctxHeader = make(http.Header)
 		for k, v := range r.Header {
 			if kL := strings.ToLower(k); kL == "forwarded" || kL == "x-forwarded-for" {
 				ctxHeader[k] = v
 			}
 		}
 		ctxHeader.Add("Forwarded", "for=\""+r.RemoteAddr+"\"")
+	}
+
+	for _, hName := range fp.relayHeaders {
+		hVal := r.Header.Get(hName)
+		if len(hVal) > 0 {
+			if ctxHeader == nil {
+				ctxHeader = make(http.Header)
+			}
+			ctxHeader.Add(hName, hVal)
+		}
+	}
+
+	if ctxHeader != nil {
 		ctx = context.WithValue(ctx, httpclient.ContextKeyHeader{}, ctxHeader)
 	}
 
@@ -352,6 +369,17 @@ func (fp *ForwardProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) (int, 
 			return http.StatusForbidden, errors.New("hostname " + r.URL.Hostname() + " is not allowed")
 		}
 		defer targetConn.Close()
+
+		if h, ok := targetConn.(interface {
+			RespHeader() http.Header
+		}); ok {
+			for _, hName := range fp.relayHeaders {
+				hVal := h.RespHeader().Get(hName)
+				if len(hVal) > 0 {
+					w.Header().Set(hName, hVal)
+				}
+			}
+		}
 
 		switch r.ProtoMajor {
 		case 1: // http1: hijack the whole flow

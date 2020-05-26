@@ -89,7 +89,7 @@ func connectAndGetViaProxy(targetHost, resource, proxyAddr, httpTargetVer, proxy
 		if err != nil {
 			return resp, err
 		}
-		proxyConn = httpclient.NewHttp2Conn(proxyConn, pw, resp.Body)
+		proxyConn = httpclient.NewHttp2Conn(proxyConn, pw, resp.Body, resp.Header)
 	case "HTTP/1.1":
 		req.ProtoMajor = 1
 		req.ProtoMinor = 1

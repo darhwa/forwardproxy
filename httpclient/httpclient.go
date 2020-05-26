@@ -140,7 +140,7 @@ func (c *HTTPConnectDialer) DialContext(ctx context.Context, network, address st
 			rawConn.Close()
 			return nil, errors.New("Proxy responded with non 200 code: " + resp.Status)
 		}
-		return NewHttp2Conn(rawConn, pw, resp.Body), nil
+		return NewHttp2Conn(rawConn, pw, resp.Body, resp.Header), nil
 	}
 
 	connectHttp1 := func(rawConn net.Conn) (net.Conn, error) {
@@ -164,7 +164,7 @@ func (c *HTTPConnectDialer) DialContext(ctx context.Context, network, address st
 			rawConn.Close()
 			return nil, errors.New("Proxy responded with non 200 code: " + resp.Status)
 		}
-		return rawConn, nil
+		return NewHttp1Conn(rawConn, resp.Header), nil
 	}
 
 	if c.EnableH2ConnReuse {
@@ -255,14 +255,15 @@ func (c *HTTPConnectDialer) DialContext(ctx context.Context, network, address st
 	}
 }
 
-func NewHttp2Conn(c net.Conn, pipedReqBody *io.PipeWriter, respBody io.ReadCloser) net.Conn {
-	return &http2Conn{Conn: c, in: pipedReqBody, out: respBody}
+func NewHttp2Conn(c net.Conn, pipedReqBody *io.PipeWriter, respBody io.ReadCloser, h http.Header) net.Conn {
+	return &http2Conn{Conn: c, in: pipedReqBody, out: respBody, header: h}
 }
 
 type http2Conn struct {
 	net.Conn
-	in  *io.PipeWriter
-	out io.ReadCloser
+	in     *io.PipeWriter
+	out    io.ReadCloser
+	header http.Header
 }
 
 func (h *http2Conn) Read(p []byte) (n int, err error) {
@@ -288,4 +289,21 @@ func (h *http2Conn) CloseWrite() error {
 
 func (h *http2Conn) CloseRead() error {
 	return h.out.Close()
+}
+
+func (h *http2Conn) RespHeader() http.Header {
+	return h.header
+}
+
+func NewHttp1Conn(c net.Conn, h http.Header) net.Conn {
+	return &http1Conn{Conn: c, header: h}
+}
+
+type http1Conn struct {
+	net.Conn
+	header http.Header
+}
+
+func (h *http1Conn) RespHeader() http.Header {
+	return h.header
 }
